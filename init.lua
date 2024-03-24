@@ -98,6 +98,9 @@ vim.g.have_nerd_font = false
 -- NOTE: You can change these options as you wish!
 --  For more options, you can see `:help option-list`
 
+-- change tab spaces to 4
+vim.opt.shiftwidth = 4
+
 -- Make line numbers default
 vim.opt.number = true
 -- You can also add relative line numbers, to help with jumping.
@@ -167,6 +170,8 @@ vim.keymap.set('n', ']d', vim.diagnostic.goto_next, { desc = 'Go to next [D]iagn
 vim.keymap.set('n', '<leader>e', vim.diagnostic.open_float, { desc = 'Show diagnostic [E]rror messages' })
 vim.keymap.set('n', '<leader>q', vim.diagnostic.setloclist, { desc = 'Open diagnostic [Q]uickfix list' })
 
+vim.keymap.set('n', '<m-i>', 'i```{python}<cr>```<esc>ko', { desc = '[i]nsert Code chunk' })
+vim.keymap.set('n', '<leader>ci', ':split term://ipython<cr>', { desc = '[c]opy code into [i]python' })
 -- Exit terminal mode in the builtin terminal with a shortcut that is a bit easier
 -- for people to discover. Otherwise, you normally need to press <C-\><C-n>, which
 -- is not what someone will guess without a bit more experience.
@@ -204,6 +209,13 @@ vim.api.nvim_create_autocmd('TextYankPost', {
   end,
 })
 
+vim.api.nvim_create_autocmd('TermOpen', {
+  desc = 'remove line numbers in terminal',
+  group = vim.api.nvim_create_augroup('kickstart-term', { clear = true }),
+  callback = function()
+    vim.wo.number = false
+  end,
+})
 -- [[ Install `lazy.nvim` plugin manager ]]
 --    See `:help lazy.nvim.txt` or https://github.com/folke/lazy.nvim for more info
 local lazypath = vim.fn.stdpath 'data' .. '/lazy/lazy.nvim'
@@ -243,7 +255,48 @@ require('lazy').setup({
   -- Here is a more advanced example where we pass configuration
   -- options to `gitsigns.nvim`. This is equivalent to the following Lua:
   --    require('gitsigns').setup({ ... })
-  --
+  
+  {
+    'quarto-dev/quarto-nvim',
+    opts = {},
+    dependencies = {
+      'jmbuhr/otter.nvim',
+      opts = {},
+    },
+  },
+
+  {
+    'jpalardy/vim-slime',
+    init = function()
+      vim.g.slime_target = 'neovim'
+      vim.g.slime_python_ipython = 1
+      vim.g.slime_dispatch_ipython_pause = 100
+      vim.g.slime_code_delimiter = '#\\s\\%%'
+
+      vim.cmd [[
+      function! _EscapeText_quarto(text)
+        if slime#config#resolve("python_ipython") && len(split(a:text,"\n")) > 1
+          return ["%cpaste -q\n", slime#config#resolve("dispatch_ipython_pause"), a:text, "--\n"]
+        else
+          let empty_lines_pat = '\(^\|\n\)\zs\(\s*\n\+\)\+'
+          let no_empty_lines = substitute(a:text, empty_lines_pat, "", "g")
+          let dedent_pat = '\(^\|\n\)\zs'.matchstr(no_empty_lines, '^\s*')
+          let dedented_lines = substitute(no_empty_lines, dedent_pat, "", "g")
+          let except_pat = '\(elif\|else\|except\|finally\)\@!'
+          let add_eol_pat = '\n\s[^\n]\+\n\zs\ze\('.except_pat.'\S\|$\)'
+          return substitute(dedented_lines, add_eol_pat, "\n", "g")
+        end
+      endfunction
+      ]]
+
+    end,
+    config = function()
+      vim.keymap.set({'n','i'}, '<m-cr>', function()
+        vim.cmd [[ call slime#send_cell() ]]
+      end, { desc = 'send code cell to terminal'})
+    end,
+  },
+
   -- See `:help gitsigns` to understand what the configuration keys do
   { -- Adds git related signs to the gutter, as well as utilities for managing changes
     'lewis6991/gitsigns.nvim',
@@ -527,7 +580,8 @@ require('lazy').setup({
       --  So, we create new capabilities with nvim cmp, and then broadcast that to the servers.
       local capabilities = vim.lsp.protocol.make_client_capabilities()
       capabilities = vim.tbl_deep_extend('force', capabilities, require('cmp_nvim_lsp').default_capabilities())
-
+      
+      capabilities.workspace.didChangeWatchedFiles.dynamicRegistration = false
       -- Enable the following language servers
       --  Feel free to add/remove any LSPs that you want here. They will automatically be installed.
       --
@@ -540,7 +594,7 @@ require('lazy').setup({
       local servers = {
         -- clangd = {},
         -- gopls = {},
-        -- pyright = {},
+        pyright = {},
         -- rust_analyzer = {},
         -- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
         --
@@ -721,6 +775,7 @@ require('lazy').setup({
           --    https://github.com/L3MON4D3/LuaSnip?tab=readme-ov-file#keymaps
         },
         sources = {
+          { name = 'otter' },
           { name = 'nvim_lsp' },
           { name = 'luasnip' },
           { name = 'path' },
